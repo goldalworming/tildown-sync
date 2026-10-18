@@ -2,6 +2,7 @@
 //
 // One Durable Object (SQLite) holds every note of one person:
 //   notes(id, seq, text)  — text NULL = deleted (tombstone)
+//   shares(sid, note)     — public read-only links
 // `seq` grows by one on every write and doubles as the note's version.
 // The Durable Object runs requests one at a time, so the version check in
 // `sync` cannot race with another device.
@@ -9,10 +10,16 @@
 // POST /sync  (Authorization: Bearer <TOKEN>)
 //   { cursor, changes: [{ id, base, text | null }] }
 // → { cursor, more, results: [{ id, seq } | { id, conflict, seq, text }],
-//     notes: [{ id, seq, text | null }] }   // changes since `cursor`
+//     notes: [{ id, seq, text | null }],   // changes since `cursor`
+//     shares: [{ note, sid }] }            // every shared note
+//
+// POST /share    { note } → { note, sid }   new link; the old one stops working
+// POST /unshare  { note } → {}
+// GET  /s/<sid>  the note as a web page, always the latest synced version (no token)
 
 import { DurableObject } from "cloudflare:workers";
-import { apply } from "./sync.js";
+import { marked } from "marked";
+import { apply, share, unshare, shares, shared, SHARES } from "./sync.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -20,6 +27,7 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const SID = /^\/s\/([A-Za-z0-9]{12})$/;
 
 const json = (v, status = 200) =>
   new Response(JSON.stringify(v), {
@@ -34,11 +42,65 @@ async function same(a, b) {
   return crypto.subtle.timingSafeEqual(await h(a), await h(b));
 }
 
+const esc = (s) =>
+  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+
+// Raw HTML in a note is shown as text; the CSP below also blocks every script.
+marked.use({
+  renderer: {
+    html: ({ text }) => esc(text),
+    // Only web, mail and in-page links; anything else (javascript:, …) stays plain text.
+    link(t) {
+      const inner = this.parser.parseInline(t.tokens);
+      return /^(https?:|mailto:|#)/i.test(t.href) ? `<a href="${esc(t.href)}">${inner}</a>` : inner;
+    },
+  },
+});
+
+function page(text) {
+  const title = (text.split("\n").find((l) => l.trim()) || "Note").replace(/^#+\s*/, "").trim().slice(0, 120);
+  const body = marked.parse(text);
+  return `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<title>${esc(title)}</title><style>
+:root{color-scheme:light dark;--fg:#1f2328;--dim:#59636e;--bg:#fff;--line:#d1d9e0;--code:#f6f8fa;--a:#0969da}
+@media (prefers-color-scheme:dark){:root{--fg:#e6edf3;--dim:#9198a1;--bg:#0d1117;--line:#3d444d;--code:#151b23;--a:#4493f8}}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:720px;margin:0 auto;padding:40px 16px 24px;overflow-wrap:anywhere}
+a{color:var(--a)}img{max-width:100%}h1,h2,h3{line-height:1.25}
+pre,code{background:var(--code);border-radius:6px;font:14px/1.5 ui-monospace,Consolas,monospace}
+pre{padding:12px 16px;overflow-x:auto}code{padding:2px 4px}pre code{padding:0}
+blockquote{margin:0;padding:0 16px;color:var(--dim);border-left:3px solid var(--line)}
+table{border-collapse:collapse}td,th{border:1px solid var(--line);padding:6px 12px}
+hr{border:0;border-top:1px solid var(--line)}
+footer{max-width:720px;margin:0 auto;padding:16px;color:var(--dim);font-size:13px;border-top:1px solid var(--line)}
+</style></head><body><main dir="auto">${body}</main>
+<footer>Shared from <a href="https://github.com/goldalworming/tildown">TilDown</a></footer></body></html>`;
+}
+
+const gone = () =>
+  new Response("This link doesn't exist or is no longer shared.\n", { status: 404, headers: { "Cache-Control": "no-store" } });
+
 export default {
   async fetch(req, env) {
     if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
     const { pathname } = new URL(req.url);
-    if (pathname !== "/sync") {
+    const store = () => env.NOTES.get(env.NOTES.idFromName("notes"));
+
+    const s = SID.exec(pathname);
+    if (s && req.method === "GET") {
+      const text = await store().shared(s[1]);
+      if (text === null) return gone();
+      return new Response(page(text), {
+        headers: {
+          "Content-Type": "text/html; charset=utf-8",
+          "Cache-Control": "no-store",
+          "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:",
+          "Referrer-Policy": "no-referrer",
+        },
+      });
+    }
+    if (!["/sync", "/share", "/unshare"].includes(pathname)) {
       const ok = pathname === "/";
       return new Response(ok ? "TilDown sync server is running.\n" : "Not found\n", {
         status: ok ? 200 : 404,
@@ -57,6 +119,13 @@ export default {
     } catch {
       return json({ error: "bad JSON" }, 400);
     }
+    if (pathname !== "/sync") {
+      const note = body?.note;
+      if (!ID.test(note ?? "")) return json({ error: "bad note id" }, 400);
+      if (pathname === "/share") return json({ note, sid: await store().share(note) });
+      await store().unshare(note);
+      return json({});
+    }
     const cursor = Number.isInteger(body?.cursor) ? body.cursor : 0;
     const changes = Array.isArray(body?.changes) ? body.changes : [];
     for (const c of changes) {
@@ -64,8 +133,7 @@ export default {
       if (!ID.test(c?.id ?? "") || !Number.isInteger(c.base) || !(text === null || typeof text === "string"))
         return json({ error: "bad change" }, 400);
     }
-    const store = env.NOTES.get(env.NOTES.idFromName("notes"));
-    return json(await store.sync(cursor, changes));
+    return json(await store().sync(cursor, changes));
   },
 };
 
@@ -74,11 +142,24 @@ export class Notes extends DurableObject {
     super(ctx, env);
     this.sql = ctx.storage.sql;
     this.sql.exec(`CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, seq INTEGER NOT NULL, text TEXT);
-                   CREATE INDEX IF NOT EXISTS notes_seq ON notes (seq);`);
+                   CREATE INDEX IF NOT EXISTS notes_seq ON notes (seq);
+                   ${SHARES};`);
+    this.q = (s, ...a) => this.sql.exec(s, ...a).toArray();
   }
 
   sync(cursor, changes) {
-    const q = (s, ...a) => this.sql.exec(s, ...a).toArray();
-    return this.ctx.storage.transactionSync(() => apply(q, cursor, changes));
+    return this.ctx.storage.transactionSync(() => ({ ...apply(this.q, cursor, changes), shares: shares(this.q) }));
+  }
+
+  share(note) {
+    return this.ctx.storage.transactionSync(() => share(this.q, note));
+  }
+
+  unshare(note) {
+    unshare(this.q, note);
+  }
+
+  shared(sid) {
+    return shared(this.q, sid);
   }
 }

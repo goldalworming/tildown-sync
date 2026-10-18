@@ -2,11 +2,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { apply } from "./src/sync.js";
+import { apply, share, unshare, shares, shared, newSid, SHARES } from "./src/sync.js";
 
 const db = () => {
   const d = new DatabaseSync(":memory:");
-  d.exec("CREATE TABLE notes (id TEXT PRIMARY KEY, seq INTEGER NOT NULL, text TEXT); CREATE INDEX notes_seq ON notes (seq);");
+  d.exec(SHARES + "; CREATE TABLE notes (id TEXT PRIMARY KEY, seq INTEGER NOT NULL, text TEXT); CREATE INDEX notes_seq ON notes (seq);");
   return (s, ...a) => d.prepare(s).all(...a).map((r) => ({ ...r }));
 };
 
@@ -43,4 +43,25 @@ test("pages of 200", () => {
   assert.equal(r.notes.length, 50);
   assert.ok(!r.more);
   assert.equal(r.cursor, 450);
+});
+
+test("share, live text, stop, share again", () => {
+  const q = db();
+  apply(q, 0, [{ id: "a", base: 0, text: "A1" }]);
+  const s1 = share(q, "a");
+  assert.match(s1, /^[A-Za-z0-9]{12}$/);
+  assert.equal(shared(q, s1), "A1");
+  apply(q, 1, [{ id: "a", base: 1, text: "A2" }]);
+  assert.equal(shared(q, s1), "A2", "the link shows the latest version");
+  const s2 = share(q, "a");
+  assert.notEqual(s1, s2);
+  assert.equal(shared(q, s1), null, "sharing again kills the old link");
+  assert.deepEqual(shares(q), [{ note: "a", sid: s2 }]);
+  unshare(q, "a");
+  assert.equal(shared(q, s2), null);
+  share(q, "a", "x");
+  apply(q, 2, [{ id: "a", base: 2, text: null }]);
+  assert.equal(shared(q, "x"), null, "deleted note");
+  assert.equal(shared(q, "nope"), null);
+  assert.equal(new Set(Array.from({ length: 50 }, newSid)).size, 50);
 });

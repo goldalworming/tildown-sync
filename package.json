@@ -19,5 +19,8 @@
         "description": "Durable Object (SQLite) that stores your notes."
       }
     }
+  },
+  "dependencies": {
+    "marked": "^15.0.12"
   }
 }

@@ -30,3 +30,37 @@ export function apply(q, cursor, changes) {
   if (more) notes.pop();
   return { cursor: notes.length ? notes[notes.length - 1].seq : cursor, more, results, notes };
 }
+
+// Sharing: one public link per note, read live from `notes`. A new share
+// replaces the note's old link, so stopping and sharing again never revives
+// an old id.
+//   shares(sid, note)  — sid: random, unguessable; note: notes.id
+
+export const SHARES = "CREATE TABLE IF NOT EXISTS shares (sid TEXT PRIMARY KEY, note TEXT NOT NULL UNIQUE)";
+
+/// 12 characters from 62: about 71 bits.
+export function newSid() {
+  const abc = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  const b = crypto.getRandomValues(new Uint8Array(24));
+  let s = "";
+  for (const x of b) if (x < 248 && s.length < 12) s += abc[x % 62]; // 248 = 4·62: no bias
+  return s.length === 12 ? s : newSid();
+}
+
+export function share(q, note, sid = newSid()) {
+  q("DELETE FROM shares WHERE note = ?", note);
+  q("INSERT INTO shares (sid, note) VALUES (?, ?)", sid, note);
+  return sid;
+}
+
+export function unshare(q, note) {
+  q("DELETE FROM shares WHERE note = ?", note);
+}
+
+export const shares = (q) => q("SELECT note, sid FROM shares");
+
+/// Text of the shared note, or null (unknown link, stopped, or deleted note).
+export function shared(q, sid) {
+  const r = q("SELECT n.text FROM shares s JOIN notes n ON n.id = s.note WHERE s.sid = ?", sid)[0];
+  return r?.text ?? null;
+}
