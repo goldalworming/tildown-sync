@@ -16,10 +16,12 @@
 // POST /share    { note } → { note, sid }   new link; the old one stops working
 // POST /unshare  { note } → {}
 // GET  /s/<sid>  the note as a web page, always the latest synced version (no token)
+// POST /mcp/<TOKEN>  MCP server for Claude (see mcp.js); the token in the URL is the secret
 
 import { DurableObject } from "cloudflare:workers";
 import { marked } from "marked";
 import { apply, share, unshare, shares, shared, SHARES } from "./sync.js";
+import { rpc } from "./mcp.js";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -102,6 +104,20 @@ export default {
         },
       });
     }
+    const mcp = /^\/mcp\/([^/]+)$/.exec(pathname);
+    if (mcp) {
+      if (!env.TOKEN || env.TOKEN.length < 16 || !(await same(mcp[1], env.TOKEN)))
+        return json({ error: "wrong token" }, 401);
+      if (req.method !== "POST") return new Response(null, { status: 405, headers: { Allow: "POST" } });
+      let body;
+      try {
+        body = await req.json();
+      } catch {
+        return json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "bad JSON" } }, 400);
+      }
+      const out = await store().mcp(body);
+      return out === null ? new Response(null, { status: 202 }) : json(out);
+    }
     if (!["/sync", "/share", "/unshare"].includes(pathname)) {
       const ok = pathname === "/";
       return new Response(ok ? "TilDown sync server is running.\n" : "Not found\n", {
@@ -163,5 +179,13 @@ export class Notes extends DurableObject {
 
   shared(sid) {
     return shared(this.q, sid);
+  }
+
+  mcp(body) {
+    return this.ctx.storage.transactionSync(() => {
+      if (!Array.isArray(body)) return rpc(this.q, body);
+      const out = body.map((m) => rpc(this.q, m)).filter(Boolean);
+      return out.length ? out : null;
+    });
   }
 }

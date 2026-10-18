@@ -2,6 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
+import { call, rpc } from "./src/mcp.js";
 import { apply, share, unshare, shares, shared, newSid, SHARES } from "./src/sync.js";
 
 const db = () => {
@@ -64,4 +65,26 @@ test("share, live text, stop, share again", () => {
   assert.equal(shared(q, "x"), null, "deleted note");
   assert.equal(shared(q, "nope"), null);
   assert.equal(new Set(Array.from({ length: 50 }, newSid)).size, 50);
+});
+
+test("mcp tools", () => {
+  const q = db();
+  apply(q, 0, [{ id: "20260101-000000", base: 0, text: "# Rendang\n\n#resep daging sapi\nsantan" }, { id: "x", base: 0, text: "# Lain\n#resepku" }]);
+  assert.match(call(q, "list_notes", {}), /tildown:20260101-000000  Rendang/);
+  const s = call(q, "search_notes", { query: "#resep santan" });
+  assert.match(s, /Rendang\n    santan/);
+  assert.doesNotMatch(s, /Lain/, "tag must match exactly");
+  assert.match(call(q, "read_note", { id: "tildown:20260101-000000 (Rendang)" }), /daging sapi/);
+  const id = call(q, "create_note", { text: "# Baru" }).match(/tildown:(\S+)/)[1];
+  assert.match(id, /^\d{8}-\d{6}$/);
+  assert.equal(apply(q, 0, []).notes.find((n) => n.id === id).text, "# Baru", "devices pull it");
+  call(q, "append_to_note", { id, text: "- satu" });
+  const body = call(q, "read_note", { id }).split("\n\n").slice(1).join("\n\n");
+  call(q, "update_note", { id, text: body + "- dua\n" });
+  assert.equal(call(q, "read_note", { id }), `tildown:${id}\n\n# Baru\n- satu\n- dua\n`);
+  assert.throws(() => call(q, "read_note", { id: "nope" }));
+  const r = rpc(q, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "read_note", arguments: { id: "nope" } } });
+  assert.equal(r.result.isError, true);
+  assert.equal(rpc(q, { jsonrpc: "2.0", method: "notifications/initialized" }), null);
+  assert.equal(rpc(q, { jsonrpc: "2.0", id: 2, method: "tools/list" }).result.tools.length, 6);
 });
