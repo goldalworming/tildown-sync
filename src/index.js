@@ -46,7 +46,9 @@ const esc = (s) =>
   s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
 // Raw HTML in a note is shown as text; the CSP below also blocks every script.
+// Enter = line break, as in the app.
 marked.use({
+  breaks: true,
   renderer: {
     html: ({ text }) => esc(text),
     // Only web, mail and in-page links; anything else (javascript:, …) stays plain text.
