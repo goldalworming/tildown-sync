@@ -1,0 +1,23 @@
+{
+  "name": "tildown-sync",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "node --test test.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "TOKEN": {
+        "description": "Secret token for the TilDown app. In TilDown → Settings → Sync, press **Generate** (it copies a new token to the clipboard) and paste it here."
+      },
+      "NOTES": {
+        "description": "Durable Object (SQLite) that stores your notes."
+      }
+    }
+  }
+}

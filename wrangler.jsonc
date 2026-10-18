@@ -1,0 +1,13 @@
+// TilDown sync server: one Worker + one SQLite Durable Object holding your notes.
+// Deploy with the "Deploy to Cloudflare" button in the README, or `npx wrangler deploy`.
+{
+  "name": "tildown-sync",
+  "main": "src/index.js",
+  "compatibility_date": "2025-04-01",
+  "durable_objects": {
+    "bindings": [{ "name": "NOTES", "class_name": "Notes" }]
+  },
+  // SQLite-backed Durable Objects are available on the Workers Free plan.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["Notes"] }],
+  "observability": { "enabled": true }
+}

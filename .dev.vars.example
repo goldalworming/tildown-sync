@@ -1,0 +1,3 @@
+# Secret shared with the TilDown app. Get one from TilDown → Settings → Sync →
+# Generate (copied to the clipboard), or `openssl rand -hex 32`.
+TOKEN=change-me-to-a-long-random-string
