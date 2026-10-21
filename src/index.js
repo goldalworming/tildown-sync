@@ -69,7 +69,9 @@ function page(text) {
 <title>${esc(title)}</title><style>
 :root{color-scheme:light dark;--fg:#1f2328;--dim:#59636e;--bg:#fff;--line:#d1d9e0;--code:#f6f8fa;--a:#0969da}
 @media (prefers-color-scheme:dark){:root{--fg:#e6edf3;--dim:#9198a1;--bg:#0d1117;--line:#3d444d;--code:#151b23;--a:#4493f8}}
-body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.6 system-ui,-apple-system,"Segoe UI",sans-serif}
+@font-face{font-family:Khatt;src:url(https://cdn.jsdelivr.net/gh/goldalworming/tildown@v0.1.10/assets/fonts/DigitalKhatt-Madina.otf);unicode-range:U+0600-06FF,U+0750-077F,U+0870-08FF,U+FB50-FDFF,U+FE70-FEFF;size-adjust:130%;font-display:swap}
+@font-face{font-family:Naskh;src:url(https://cdn.jsdelivr.net/gh/goldalworming/tildown@v0.1.10/assets/fonts/NotoNaskhArabic-Extra.ttf);unicode-range:U+0600-06FF,U+0750-077F,U+0870-08FF,U+FB50-FDFF,U+FE70-FEFF;size-adjust:130%;font-display:swap}
+body{margin:0;background:var(--bg);color:var(--fg);font:17px/1.8 Khatt,Naskh,system-ui,-apple-system,"Segoe UI",sans-serif}
 main{max-width:720px;margin:0 auto;padding:40px 16px 24px;overflow-wrap:anywhere}
 a{color:var(--a)}img{max-width:100%}h1,h2,h3{line-height:1.25}
 pre,code{background:var(--code);border-radius:6px;font:14px/1.5 ui-monospace,Consolas,monospace}
