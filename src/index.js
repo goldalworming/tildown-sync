@@ -20,6 +20,7 @@
 
 import { DurableObject } from "cloudflare:workers";
 import { marked } from "marked";
+import { ImageResponse } from "workers-og";
 import { apply, share, unshare, shares, shared, SHARES } from "./sync.js";
 import { rpc } from "./mcp.js";
 
@@ -29,7 +30,7 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 const ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const SID = /^\/s\/([A-Za-z0-9]{12})$/;
+const SID = /^\/s\/([A-Za-z0-9]{12})(\.png)?$/;
 
 const json = (v, status = 200) =>
   new Response(JSON.stringify(v), {
@@ -61,18 +62,47 @@ marked.use({
   },
 });
 
-function page(text, url) {
+// Title (first line) and, for link previews, the text after it with markdown marks dropped.
+function meta(text) {
   const title = (text.split("\n").find((l) => l.trim()) || "Note").replace(/^#+\s*/, "").trim().slice(0, 120);
-  const body = marked.parse(text);
-  // Link preview (WhatsApp, Telegram, …): the text after the title, markdown marks dropped.
   const rest = text.trim().split("\n").slice(1).join(" ");
   const desc = rest.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[#*_>`|~]+/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
+  return { title, desc };
+}
+
+const FONT = "https://cdn.jsdelivr.net/gh/goldalworming/tildown@v0.1.10/web/fonts/";
+let fonts;
+// Link-preview image: title and opening text on the app's dark colours.
+async function card(text) {
+  fonts ??= Promise.all(["NotoSans-Regular.ttf", "NotoSans-Bold.ttf"].map((f) => fetch(FONT + f).then((r) => r.arrayBuffer())));
+  const [reg, bold] = await fonts;
+  // ponytail: satori can't shape Arabic, so Arabic letters are left out of the image (the page shows them).
+  const plain = (s) => esc(s.replace(/[\u0600-\u06FF\u0750-\u077F\u0870-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]+/g, "").replace(/\s+/g, " ").trim());
+  const { title, desc } = meta(text);
+  const html = `<div style="display:flex;flex-direction:column;width:1200px;height:630px;padding:64px 72px;background:#0d1117;color:#e6edf3;font-family:Noto Sans">
+<div style="display:flex;font-size:64px;font-weight:700;line-height:1.15;max-height:225px;overflow:hidden">${plain(title)}</div>
+<div style="display:flex;margin-top:32px;font-size:32px;line-height:1.45;color:#9198a1;max-height:186px;overflow:hidden">${plain(desc)}</div>
+<div style="display:flex;margin-top:auto;font-size:28px;font-weight:700;color:#4493f8">TilDown</div></div>`;
+  return new ImageResponse(html, {
+    width: 1200,
+    height: 630,
+    fonts: [
+      { name: "Noto Sans", data: reg, weight: 400 },
+      { name: "Noto Sans", data: bold, weight: 700 },
+    ],
+    headers: { "Cache-Control": "public, max-age=3600" },
+  });
+}
+
+function page(text, url) {
+  const { title, desc } = meta(text);
+  const body = marked.parse(text);
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
 <link rel="icon" type="image/png" href="https://goldalworming.github.io/tildown/icons/icon-192.png"><link rel="apple-touch-icon" href="https://goldalworming.github.io/tildown/icons/apple-touch-icon.png">
 <meta property="og:type" content="article"><meta property="og:url" content="${esc(url)}"><meta property="og:site_name" content="TilDown">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta name="description" content="${esc(desc)}">
-<meta property="og:image" content="https://goldalworming.github.io/tildown/icons/icon-512.png">
+<meta property="og:image" content="${esc(url)}.png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta name="twitter:card" content="summary_large_image">
 <title>${esc(title)}</title><style>
 :root{color-scheme:light dark;--fg:#1f2328;--dim:#59636e;--bg:#fff;--line:#d1d9e0;--code:#f6f8fa;--a:#0969da}
 @media (prefers-color-scheme:dark){:root{--fg:#e6edf3;--dim:#9198a1;--bg:#0d1117;--line:#3d444d;--code:#151b23;--a:#4493f8}}
@@ -104,6 +134,7 @@ export default {
     if (s && (req.method === "GET" || req.method === "HEAD")) {
       const text = await store().shared(s[1]);
       if (text === null) return gone();
+      if (s[2]) return card(text);
       return new Response(page(text, req.url), {
         headers: {
           "Content-Type": "text/html; charset=utf-8",

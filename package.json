@@ -21,6 +21,7 @@
     }
   },
   "dependencies": {
-    "marked": "^15.0.12"
+    "marked": "^15.0.12",
+    "workers-og": "^0.0.27"
   }
 }
