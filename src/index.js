@@ -61,7 +61,7 @@ marked.use({
   },
 });
 
-function page(text) {
+function page(text, url) {
   const title = (text.split("\n").find((l) => l.trim()) || "Note").replace(/^#+\s*/, "").trim().slice(0, 120);
   const body = marked.parse(text);
   // Link preview (WhatsApp, Telegram, …): the text after the title, markdown marks dropped.
@@ -70,7 +70,7 @@ function page(text) {
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
 <link rel="icon" type="image/png" href="https://goldalworming.github.io/tildown/icons/icon-192.png"><link rel="apple-touch-icon" href="https://goldalworming.github.io/tildown/icons/apple-touch-icon.png">
-<meta property="og:type" content="article"><meta property="og:site_name" content="TilDown">
+<meta property="og:type" content="article"><meta property="og:url" content="${esc(url)}"><meta property="og:site_name" content="TilDown">
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta name="description" content="${esc(desc)}">
 <meta property="og:image" content="https://goldalworming.github.io/tildown/icons/icon-512.png">
 <title>${esc(title)}</title><style>
@@ -101,10 +101,10 @@ export default {
     const store = () => env.NOTES.get(env.NOTES.idFromName("notes"));
 
     const s = SID.exec(pathname);
-    if (s && req.method === "GET") {
+    if (s && (req.method === "GET" || req.method === "HEAD")) {
       const text = await store().shared(s[1]);
       if (text === null) return gone();
-      return new Response(page(text), {
+      return new Response(page(text, req.url), {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-store",
