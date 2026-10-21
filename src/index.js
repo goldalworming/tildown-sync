@@ -101,7 +101,7 @@ export default {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Cache-Control": "no-store",
-          "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:",
+          "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; img-src https: data:; font-src https://cdn.jsdelivr.net",
           "Referrer-Policy": "no-referrer",
         },
       });
