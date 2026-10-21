@@ -66,6 +66,7 @@ function page(text) {
   const body = marked.parse(text);
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
+<link rel="icon" type="image/png" href="https://goldalworming.github.io/tildown/icons/icon-192.png"><link rel="apple-touch-icon" href="https://goldalworming.github.io/tildown/icons/apple-touch-icon.png">
 <title>${esc(title)}</title><style>
 :root{color-scheme:light dark;--fg:#1f2328;--dim:#59636e;--bg:#fff;--line:#d1d9e0;--code:#f6f8fa;--a:#0969da}
 @media (prefers-color-scheme:dark){:root{--fg:#e6edf3;--dim:#9198a1;--bg:#0d1117;--line:#3d444d;--code:#151b23;--a:#4493f8}}
