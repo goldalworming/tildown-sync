@@ -64,9 +64,15 @@ marked.use({
 function page(text) {
   const title = (text.split("\n").find((l) => l.trim()) || "Note").replace(/^#+\s*/, "").trim().slice(0, 120);
   const body = marked.parse(text);
+  // Link preview (WhatsApp, Telegram, …): the text after the title, markdown marks dropped.
+  const rest = text.trim().split("\n").slice(1).join(" ");
+  const desc = rest.replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[#*_>`|~]+/g, "").replace(/\s+/g, " ").trim().slice(0, 200);
   return `<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">
 <link rel="icon" type="image/png" href="https://goldalworming.github.io/tildown/icons/icon-192.png"><link rel="apple-touch-icon" href="https://goldalworming.github.io/tildown/icons/apple-touch-icon.png">
+<meta property="og:type" content="article"><meta property="og:site_name" content="TilDown">
+<meta property="og:title" content="${esc(title)}"><meta property="og:description" content="${esc(desc)}"><meta name="description" content="${esc(desc)}">
+<meta property="og:image" content="https://goldalworming.github.io/tildown/icons/icon-512.png">
 <title>${esc(title)}</title><style>
 :root{color-scheme:light dark;--fg:#1f2328;--dim:#59636e;--bg:#fff;--line:#d1d9e0;--code:#f6f8fa;--a:#0969da}
 @media (prefers-color-scheme:dark){:root{--fg:#e6edf3;--dim:#9198a1;--bg:#0d1117;--line:#3d444d;--code:#151b23;--a:#4493f8}}
